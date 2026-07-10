@@ -1,105 +1,116 @@
-# Coleoptera
+# Coleoptera (Rust single-binary rewrite)
 
-A standalone desktop application that crawls websites and converts them to clean Markdown using [crawl4ai](https://github.com/unclecode/crawl4ai).
+A standalone desktop app that crawls a URL and converts the page to clean
+Markdown. This is a **complete rewrite** of the original Python (Flask +
+crawl4ai) backend + Electron/React frontend into a **single native executable**
+built with Rust + Tauri v2.
 
-Built with **Electron + React + Vite** (frontend) and **Flask + crawl4ai + Playwright** (backend). The Python backend is bundled into the app — no separate server needed at runtime.
+One binary. One window. No Python, no Node, no Electron, no external browser.
 
-## Requirements
+## What changed vs. the original
 
-- Python 3.12
-- Node.js 20+
-- npm
+| Original (Python/Electron)        | This rewrite (Rust/Tauri)                       |
+|-----------------------------------|-------------------------------------------------|
+| `backend.py` Flask SSE on :5001   | Embedded Axum HTTP server (same binary)         |
+| Electron + React + Vite           | Native webview window, single `index.html` UI   |
+| crawl4ai = Playwright Chromium    | `reqwest` HTTP fetch + `html2md` (HTML→Markdown)|
+| Two runtimes, a venv, npm         | One `cargo build`, one executable               |
 
-## Development
+## Why no browser engine?
 
-### 1. Setup Python environment
+The option chosen was a **native desktop window with a real single binary, no
+Electron**. To keep it a *true* single binary that runs anywhere with no
+Chromium download, the crawl engine uses plain HTTP fetch + HTML→Markdown
+conversion instead of a headless browser.
 
-```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-playwright install chromium
-```
+Consequence: **JS-rendered / SPA pages won't have their client-rendered DOM
+captured** (the source HTML is what gets converted). Static sites, articles,
+docs, and server-rendered pages work great. This is the same trade-off as the
+"fully self-contained" option — if you need full JS rendering, that requires
+bundling a Chromium binary (the `chromiumoxide` crate), which breaks the
+single-binary property.
 
-### 2. Setup frontend
+The crawler is isolated in `src-tauri/src/crawler.rs` behind a clean function
+signature, so swapping in a Chromium-backed engine later is a localized change.
 
-```bash
-cd electron
-npm install
-```
+## Features
 
-### 3. Run (dev mode)
+- URL input → clean Markdown output (GFM-style: headings, lists, code, tables,
+  blockquotes, links).
+- Real-time **SSE** progress events: loading → loaded → extracting → done.
+- Live log stream with info/warning/error levels.
+- **Stop** button cancels a crawl mid-flight (server-side abort).
+- Dark UI, **embedded directly into the binary** (`include_str!`) — no external
+  asset files, no CDN, no network at runtime.
+- `/health` and `/crawl/cancel` endpoints mirror the original API surface.
 
-```bash
-cd electron
-npm run dev
-```
+## How the single binary works
 
-This builds the React frontend and launches Electron. The Electron main process automatically spawns `.venv/bin/python backend.py` as a child process.
+There are exactly two processes and they share one origin:
 
----
+1. On launch, the Tauri app spawns an **embedded Axum HTTP server** on
+   `127.0.0.1:1420` (the backend — crawl engine + SSE API).
+2. A native **webview window** then loads `http://127.0.0.1:1420/` (the
+   frontend — `dist/index.html`, served from the same binary).
 
-## Build distributable
+Because frontend and backend are same-origin, the UI calls the API with plain
+`fetch` — no CORS, no separate server process, no config. `cargo tauri build`
+packages the binary plus the native webview bootstrap into a real
+`.app` / `.dmg` / `.exe` / `.AppImage`.
 
-### Local build (your current platform only)
+## Build
 
-```bash
-cd electron
-
-# Build once for quick dev cycle (skips Python bundling)
-npm run build:electron:quick
-
-# Full build (bundles Python + Playwright browsers)
-npm run build:all
-```
-
-Output goes to `electron/release/`:
-- **macOS**: `Coleoptera-1.0.0-mac-arm64.dmg` + `.zip`
-- **Linux**: `Coleoptera-1.0.0-linux-x64.AppImage`
-- **Windows**: `Coleoptera-1.0.0-win-x64.exe`
-
-### Platform-specific notes
-
-**macOS**: Code signing requires setting `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` environment variables. Without these, the app builds but shows an "unverified developer" warning (right-click → Open to bypass).
-
-**Linux**: `AppImage` target needs `fuse` installed (`sudo apt install fuse` on Debian/Ubuntu).
-
-**Windows**: `NSIS` target needs an internet connection to download the NSIS installer on first run.
-
----
-
-## GitHub Release
-
-Push a version tag to trigger the CI pipeline:
+Requires: Rust stable + the platform's native webview deps. On macOS you need
+Xcode Command Line Tools (`xcode-select --install`). The Tauri CLI is optional
+— plain `cargo` works.
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+# Debug build / run
+cd src-tauri
+cargo run            # launches the native window
+
+# Release (single optimized binary)
+cargo build --release
+# Output: src-tauri/target/release/coleoptera   (on macOS rename to .app-less
+# executable, or use tauri build for a proper .app/.dmg bundle)
 ```
 
-The workflow (`.github/workflows/release.yml`) builds on macOS ARM64, Linux x64, and Windows x64 in parallel, then attaches all artifacts to a GitHub Release.
+### Proper app bundle (.app / .dmg / .exe / .AppImage)
 
----
+```bash
+cargo install tauri-cli --version "^2"
+cd src-tauri
+cargo tauri build   # produces platform installers in src-tauri/target/release/bundle/
+```
 
 ## Project structure
 
 ```
-.
-├── backend.py                  # Flask SSE streaming API (port 5001)
-├── requirements.txt            # Python dependencies
-├── electron/
-│   ├── index.js                # Electron main — spawns backend, singleton, lifecycle
-│   ├── scripts/
-│   │   └── copy-browsers.mjs   # Cross-platform Playwright browser bundler
-│   ├── src/
-│   │   └── App.tsx             # React UI
-│   ├── dist/                   # Built frontend (Vite output)
-│   └── package.json            # Build scripts & electron-builder config
-├── .github/workflows/release.yml
-├── start.sh
-└── LICENSE                     # MIT
+Coleoptera/
+├── dist/index.html          # Single-file frontend UI (dark, SSE + md render)
+├── src-tauri/
+│   ├── Cargo.toml
+│   ├── build.rs
+│   ├── tauri.conf.json
+│   ├── icons/               # App icons (png/icns/ico)
+│   ├── examples/e2e.rs      # Standalone end-to-end test (cargo run --example e2e)
+│   └── src/
+│       ├── main.rs          # Binary entry
+│       ├── lib.rs           # Tauri builder: spawns Axum, opens webview window
+│       ├── crawler.rs       # Crawl engine + SSE events (HTTP fetch + HTML→Markdown)
+│       ├── server.rs        # Axum routes: /, /health, /crawl/stream, /crawl/cancel
+│       └── state.rs         # In-flight crawl sessions + cancellation
+└── README.md
 ```
+
+## API (same-origin, embedded)
+
+- `POST /crawl/stream` — body `{"url":"...","options":{}}`. Returns an SSE
+  stream of events: `start`, `progress`, `log`, `done`.
+- `POST /crawl/cancel` — body `{"session_id":"..."}` to abort a running crawl.
+- `GET /health` — `{"status":"ok"}`.
+- `GET /ws` — optional WebSocket bridge (same event protocol as SSE).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT.
