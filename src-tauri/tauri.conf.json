@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Coleoptera",
+  "version": "1.0.0",
+  "identifier": "com.coleoptera.desktop",
+  "build": {
+    "beforeDevCommand": "echo 'no frontend build step'",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "echo 'no frontend build step'",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    },
+    "trayIcon": null
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    }
+  }
+}

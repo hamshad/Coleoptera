@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Coleoptera</title>
+<style>
+  :root {
+    --bg: #0d0f12;
+    --panel: #15181d;
+    --panel-2: #1c2026;
+    --border: #2a2f37;
+    --text: #e6e9ee;
+    --muted: #8b93a1;
+    --accent: #6ee7b7;
+    --accent-2: #34d399;
+    --danger: #f87171;
+    --warn: #fbbf24;
+    --code-bg: #0a0c0f;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  }
+  header .logo {
+    width: 26px; height: 26px; border-radius: 7px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; color: #06231a; font-size: 15px;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 700; letter-spacing: .3px; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  .toolbar {
+    display: flex; gap: 8px; padding: 12px 18px;
+    border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  .toolbar input[type="text"] {
+    flex: 1; background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); padding: 10px 12px; border-radius: 8px; outline: none;
+    font-size: 14px;
+  }
+  .toolbar input[type="text"]:focus { border-color: var(--accent-2); }
+  button {
+    border: none; border-radius: 8px; padding: 10px 16px; font-size: 14px;
+    font-weight: 600; cursor: pointer; transition: filter .15s ease;
+  }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #06231a; }
+  .btn-ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+  .btn-danger { background: var(--danger); color: #2a0808; }
+  button:hover:not(:disabled) { filter: brightness(1.08); }
+  .main { flex: 1; display: flex; min-height: 0; }
+  .col { display: flex; flex-direction: column; min-height: 0; }
+  .left { flex: 1; border-right: 1px solid var(--border); min-width: 0; }
+  .right { width: 360px; background: var(--panel); }
+  .pane-head {
+    padding: 10px 16px; font-size: 12px; text-transform: uppercase;
+    letter-spacing: 1px; color: var(--muted); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .status {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--muted); text-transform: none; letter-spacing: 0;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.active { background: var(--accent); animation: pulse 1s infinite; }
+  .dot.err { background: var(--danger); }
+  .dot.ok { background: var(--accent-2); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+  .content { flex: 1; overflow: auto; padding: 18px; }
+  pre.md {
+    white-space: pre-wrap; word-wrap: break-word; font-family: ui-monospace,
+    SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.6;
+    margin: 0; color: var(--text);
+  }
+  .empty { color: var(--muted); text-align: center; margin-top: 40px; }
+  .log {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px; line-height: 1.5; padding: 10px 16px; overflow: auto; flex: 1;
+  }
+  .log .line { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,.03); }
+  .log .info { color: var(--muted); }
+  .log .warning { color: var(--warn); }
+  .log .error { color: var(--danger); }
+  /* Markdown rendering */
+  .md h1,.md h2,.md h3 { line-height: 1.25; margin: 1em 0 .4em; }
+  .md h1 { font-size: 1.6em; border-bottom: 1px solid var(--border); padding-bottom: .2em; }
+  .md h2 { font-size: 1.35em; border-bottom: 1px solid var(--border); padding-bottom: .2em; }
+  .md h3 { font-size: 1.15em; }
+  .md a { color: var(--accent); text-decoration: none; }
+  .md a:hover { text-decoration: underline; }
+  .md code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: .92em; }
+  .md pre { background: var(--code-bg); padding: 12px; border-radius: 8px; overflow: auto; }
+  .md pre code { background: none; padding: 0; }
+  .md blockquote { border-left: 3px solid var(--accent-2); margin: 0; padding-left: 12px; color: var(--muted); }
+  .md ul,.md ol { padding-left: 22px; }
+  .md hr { border: none; border-top: 1px solid var(--border); margin: 1.2em 0; }
+  .md table { border-collapse: collapse; }
+  .md th,.md td { border: 1px solid var(--border); padding: 6px 10px; }
+  .spinner {
+    width: 14px; height: 14px; border: 2px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin .8s linear infinite; display: inline-block;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <header>
+    <div class="logo">C</div>
+    <div>
+      <h1>Coleoptera</h1>
+      <div class="sub">Crawl a URL &rarr; clean Markdown</div>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <input id="url" type="text" placeholder="https://example.com" value="https://example.com" />
+    <button id="crawlBtn" class="btn-primary" onclick="startCrawl()">Crawl</button>
+    <button id="stopBtn" class="btn-danger" onclick="stopCrawl()" disabled>Stop</button>
+  </div>
+
+  <div class="main">
+    <div class="col left">
+      <div class="pane-head">
+        <span>Markdown</span>
+        <span class="status"><span id="dot" class="dot"></span><span id="statusText">idle</span></span>
+      </div>
+      <div class="content">
+        <pre id="md" class="md empty">Enter a URL and click Crawl.</pre>
+      </div>
+    </div>
+    <div class="col right">
+      <div class="pane-head"><span>Live Log</span></div>
+      <div id="log" class="log"></div>
+    </div>
+  </div>
+
+<script>
+let currentStream = null;
+let sessionId = null;
+
+function setStatus(text, kind) {
+  document.getElementById('statusText').textContent = text;
+  const dot = document.getElementById('dot');
+  dot.className = 'dot' + (kind ? ' ' + kind : '');
+}
+
+function log(msg, level) {
+  const el = document.getElementById('log');
+  const div = document.createElement('div');
+  div.className = 'line ' + (level || 'info');
+  const t = new Date().toLocaleTimeString();
+  div.textContent = '[' + t + '] ' + msg;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function startCrawl() {
+  const url = document.getElementById('url').value.trim();
+  if (!url) return;
+  document.getElementById('crawlBtn').disabled = true;
+  document.getElementById('stopBtn').disabled = false;
+  document.getElementById('log').innerHTML = '';
+  const md = document.getElementById('md');
+  md.className = 'md';
+  md.innerHTML = '<span class="spinner"></span> Starting crawl...';
+  setStatus('loading', 'active');
+  log('Starting crawl for ' + url);
+
+  const body = JSON.stringify({ url: url, options: {} });
+
+  fetch('/crawl/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body
+  }).then(async (resp) => {
+    if (!resp.ok) {
+      log('Request failed: HTTP ' + resp.status, 'error');
+      finish('error');
+      return;
+    }
+    const reader = resp.body.getReader();
+    currentStream = reader;
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf('\n\n')) !== -1) {
+        const chunk = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        const dataLine = chunk.split('\n').find(l => l.startsWith('data:'));
+        if (!dataLine) continue;
+        handleEvent(dataLine.slice(5).trim());
+      }
+    }
+  }).catch((e) => {
+    log('Stream error: ' + e, 'error');
+    finish('error');
+  });
+}
+
+function handleEvent(payload) {
+  let ev;
+  try { ev = JSON.parse(payload); } catch (e) { return; }
+  switch (ev.event) {
+    case 'start':
+      sessionId = ev.session_id;
+      log('Connected: ' + ev.url, 'info');
+      break;
+    case 'progress':
+      const labels = {
+        page_loading: 'loading page',
+        page_loaded: 'page loaded',
+        extracting: 'extracting content',
+        html_retrieved: 'processing'
+      };
+      setStatus(labels[ev.status] || ev.status, 'active');
+      break;
+    case 'log':
+      log(ev.msg, ev.level || 'info');
+      break;
+    case 'done':
+      if (ev.success) {
+        document.getElementById('md').innerHTML = renderMarkdown(ev.markdown || '');
+        setStatus('done', 'ok');
+        log('Crawl complete.', 'info');
+      } else {
+        document.getElementById('md').innerHTML =
+          '<span style="color:var(--danger)">Error: ' + escapeHtml(ev.error || 'unknown') + '</span>';
+        setStatus('error', 'err');
+        log('Crawl failed: ' + (ev.error || 'unknown'), 'error');
+      }
+      finish('');
+      break;
+  }
+}
+
+function finish(kind) {
+  currentStream = null;
+  document.getElementById('crawlBtn').disabled = false;
+  document.getElementById('stopBtn').disabled = true;
+  if (kind === 'error') setStatus('error', 'err');
+  else if (kind === 'cancelled') setStatus('cancelled', 'err');
+}
+
+async function stopCrawl() {
+  if (!sessionId) return;
+  await fetch('/crawl/cancel', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionId })
+  });
+  if (currentStream) { try { await currentStream.cancel(); } catch (e) {} }
+  log('Stop requested.', 'warning');
+  finish('cancelled');
+}
+
+/* ---- Minimal Markdown renderer (no external deps) ---- */
+function renderMarkdown(md) {
+  const lines = md.replace(/\r\n/g, '\n').split('\n');
+  let html = '';
+  let i = 0;
+  let inCode = false, codeBuf = [], codeLang = '';
+  let listType = null, listBuf = [];
+  let paraBuf = [];
+
+  function flushPara() {
+    if (paraBuf.length) {
+      html += '<p>' + inline(paraBuf.join(' ').trim()) + '</p>';
+      paraBuf = [];
+    }
+  }
+  function flushList() {
+    if (listType && listBuf.length) {
+      html += '<' + listType + '>' + listBuf.map(li => '<li>' + inline(li) + '</li>').join('') + '</' + listType + '>';
+      listBuf = []; listType = null;
+    }
+  }
+  function inline(s) {
+    s = escapeHtml(s);
+    s = s.replace(/`([^`]+)`/g, (m, c) => '<code>' + c + '</code>');
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, t, h) => '<a href="' + h + '" target="_blank" rel="noopener">' + t + '</a>');
+    return s;
+  }
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (line.startsWith('```')) {
+      if (!inCode) { flushPara(); flushList(); inCode = true; codeLang = line.slice(3).trim(); codeBuf = []; }
+      else { html += '<pre><code>' + escapeHtml(codeBuf.join('\n')) + '</code></pre>'; inCode = false; }
+      i++; continue;
+    }
+    if (inCode) { codeBuf.push(line); i++; continue; }
+
+    if (/^\s*$/.test(line)) { flushPara(); flushList(); i++; continue; }
+
+    let m;
+    if ((m = line.match(/^(#{1,6})\s+(.*)$/))) {
+      flushPara(); flushList();
+      const lvl = m[1].length;
+      html += '<h' + lvl + '>' + inline(m[2].trim()) + '</h' + lvl + '>';
+      i++; continue;
+    }
+    if ((m = line.match(/^>\s?(.*)$/))) {
+      flushPara(); flushList();
+      html += '<blockquote>' + inline(m[1]) + '</blockquote>';
+      i++; continue;
+    }
+    if (/^(-{3,}|\*{3,})$/.test(line.trim())) {
+      flushPara(); flushList();
+      html += '<hr>';
+      i++; continue;
+    }
+    if ((m = line.match(/^\s*[-*]\s+(.*)$/))) {
+      flushPara();
+      if (listType !== 'ul') { flushList(); listType = 'ul'; }
+      listBuf.push(m[1]);
+      i++; continue;
+    }
+    if ((m = line.match(/^\s*\d+\.\s+(.*)$/))) {
+      flushPara();
+      if (listType !== 'ol') { flushList(); listType = 'ol'; }
+      listBuf.push(m[1]);
+      i++; continue;
+    }
+    paraBuf.push(line.trim());
+    i++;
+  }
+  flushPara(); flushList();
+  if (inCode) html += '<pre><code>' + escapeHtml(codeBuf.join('\n')) + '</code></pre>';
+  return html;
+}
+</script>
+</body>
+</html>
