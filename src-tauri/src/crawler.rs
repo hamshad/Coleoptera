@@ -1,5 +1,3 @@
-use std::ffi::{CStr, CString};
-
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::watch;
@@ -168,7 +166,24 @@ pub fn crawl(
                     serde_json::json!({ "event": "progress", "status": "extracting" }),
                 );
 
-                let markdown = convert_to_markdown(&html);
+                // Run conversion on a dedicated thread with a large stack.
+                // `htmd` (html5ever-based) can recurse deeply on large,
+                // deeply-nested DOMs (e.g. full Wikipedia articles) and would
+                // overflow the smaller tokio blocking-pool stack, crashing the
+                // process. A big-stack thread plus catch_unwind keeps the
+                // server alive even on pathological pages.
+                let html_owned = html.clone();
+                let markdown = std::thread::Builder::new()
+                    .stack_size(32 * 1024 * 1024)
+                    .spawn(move || {
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            convert_to_markdown(&html_owned)
+                        }))
+                        .unwrap_or_default()
+                    })
+                    .ok()
+                    .and_then(|h| h.join().ok())
+                    .unwrap_or_default();
 
                 emit(
                     &tx,
@@ -212,8 +227,11 @@ pub fn crawl(
     }
 }
 
-/// Strip unwanted elements, then convert the cleaned HTML to Markdown via
-/// html2md's C ABI.
+/// Strip unwanted elements, then convert the cleaned HTML to Markdown.
+///
+/// Uses `htmd` (pure-Rust, html5ever-based) which produces real Markdown and,
+/// unlike the html2md 0.2 C-ABI parser, does not hang / pathologically recurse
+/// on large, deeply-nested pages (e.g. full Wikipedia articles).
 fn convert_to_markdown(html: &str) -> String {
     let parsed = scraper::Html::parse_document(html);
 
@@ -231,56 +249,30 @@ fn convert_to_markdown(html: &str) -> String {
         .map(|e| e.html())
         .unwrap_or_else(|| html.to_string());
 
-    // Remove noisy / non-content subtrees before conversion so raw HTML and
-    // script/style/svg markup don't leak into the Markdown output.
-    let mut doc = scraper::Html::parse_document(&scope_html);
-    for sel in [
-        "script", "style", "noscript", "svg", "template", "head", "iframe",
-        "nav", "header", "footer", "aside", "form", "button", "noscript",
-        "meta", "link",
-    ] {
-        if let Ok(selector) = scraper::Selector::parse(sel) {
-            let mut removed_any = true;
-            while removed_any {
-                removed_any = false;
-                if let Some(node) = doc.select(&selector).next() {
-                    let id = node.id();
-                    if let Some(mut n) = doc.tree.get_mut(id) {
-                        n.detach();
-                        removed_any = true;
-                    }
-                }
-            }
-        }
-    }
-
-    let cleaned = doc.root_element().html();
-
-    // Drop HTML comments (html2md may otherwise pass them through literally).
-    let cleaned = regex::Regex::new(r"<!--.*?-->")
-        .map(|re| re.replace_all(&cleaned, "").to_string())
-        .unwrap_or(cleaned);
-
-    let c_html = match CString::new(cleaned) {
-        Ok(c) => c,
-        Err(_) => return String::new(),
+    // Strip noise markup via string rewriting (O(n), hang-free). Regex on the
+    // string avoids the scraper tree-mutation trap: `detach()` orphans a subtree
+    // but `select()` still traverses it, so a remove-and-rescan loop never
+    // terminates on large pages.
+    let strip = |src: String, pat: &str| -> String {
+        regex::RegexBuilder::new(pat)
+            .dot_matches_new_line(true)
+            .case_insensitive(true)
+            .build()
+            .map(|re| re.replace_all(&src, "").into_owned())
+            .unwrap_or(src)
     };
-    // html2md 0.2 exposes a C-ABI `parse(*const c_char) -> *const c_char`.
-    let c_ptr = c_html.as_ptr();
-    let ptr = unsafe { html2md::parse(c_ptr) };
-    if ptr.is_null() {
-        return String::new();
-    }
-    let markdown = unsafe {
-        let c_str = CStr::from_ptr(ptr);
-        c_str.to_string_lossy().into_owned()
-    };
-    // html2md allocates with libc malloc; free to avoid a leak.
-    unsafe {
-        libc::free(ptr as *mut libc::c_void);
-    }
+    let cleaned = strip(scope_html, r"<script\b[^>]*>.*?</script>");
+    let cleaned = strip(cleaned, r"<style\b[^>]*>.*?</style>");
+    let cleaned = strip(cleaned, r"<svg\b[^>]*>.*?</svg>");
+    let cleaned = strip(cleaned, r"<!--.*?-->");
 
-    // Collapse 3+ blank lines that html2md sometimes leaves behind.
+    let markdown = htmd::convert(&cleaned).unwrap_or_default();
+
+    // Trim trailing whitespace per line, then collapse runs of blank lines
+    // (htmd leaves many space-only lines from table/layout cells).
+    let markdown = regex::Regex::new(r"[ \t]+\n")
+        .map(|re| re.replace_all(&markdown, "\n").to_string())
+        .unwrap_or(markdown);
     let markdown = regex::Regex::new(r"\n{3,}")
         .map(|re| re.replace_all(&markdown, "\n\n").to_string())
         .unwrap_or(markdown);
@@ -291,3 +283,4 @@ fn convert_to_markdown(html: &str) -> String {
         markdown.trim().to_string()
     }
 }
+
