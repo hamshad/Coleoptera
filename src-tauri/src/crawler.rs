@@ -245,8 +245,8 @@ fn convert_to_markdown(html: &str) -> String {
                 removed_any = false;
                 if let Some(node) = doc.select(&selector).next() {
                     let id = node.id();
-                    if doc.tree.get_mut(id).is_some() {
-                        doc.tree.remove(id);
+                    if let Some(mut n) = doc.tree.get_mut(id) {
+                        n.detach();
                         removed_any = true;
                     }
                 }
