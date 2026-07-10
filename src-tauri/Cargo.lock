@@ -432,6 +432,7 @@ dependencies = [
  "futures",
  "html2md",
  "libc",
+ "regex",
  "reqwest 0.12.28",
  "scraper",
  "serde",

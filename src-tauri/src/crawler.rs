@@ -223,16 +223,45 @@ fn convert_to_markdown(html: &str) -> String {
         .next()
         .and_then(|b| b.attr("href").map(|s| s.to_string()));
 
-    // Convert only the <body> so <head> (title/scripts/styles/meta) is
-    // excluded naturally. html2md also ignores script/style contents, but
-    // dropping <head> keeps the Markdown focused on visible content.
-    let body_html = parsed
-        .select(&scraper::Selector::parse("body").unwrap())
+    // Prefer the main readable region when present; otherwise the <body>.
+    let scope_html = parsed
+        .select(&scraper::Selector::parse("main, article").unwrap())
         .next()
-        .map(|b| b.html())
+        .or_else(|| parsed.select(&scraper::Selector::parse("body").unwrap()).next())
+        .map(|e| e.html())
         .unwrap_or_else(|| html.to_string());
 
-    let c_html = match CString::new(body_html) {
+    // Remove noisy / non-content subtrees before conversion so raw HTML and
+    // script/style/svg markup don't leak into the Markdown output.
+    let mut doc = scraper::Html::parse_document(&scope_html);
+    for sel in [
+        "script", "style", "noscript", "svg", "template", "head", "iframe",
+        "nav", "header", "footer", "aside", "form", "button", "noscript",
+        "meta", "link",
+    ] {
+        if let Ok(selector) = scraper::Selector::parse(sel) {
+            let mut removed_any = true;
+            while removed_any {
+                removed_any = false;
+                if let Some(node) = doc.select(&selector).next() {
+                    let id = node.id();
+                    if doc.tree.get_mut(id).is_some() {
+                        doc.tree.remove(id);
+                        removed_any = true;
+                    }
+                }
+            }
+        }
+    }
+
+    let cleaned = doc.root_element().html();
+
+    // Drop HTML comments (html2md may otherwise pass them through literally).
+    let cleaned = regex::Regex::new(r"<!--.*?-->")
+        .map(|re| re.replace_all(&cleaned, "").to_string())
+        .unwrap_or(cleaned);
+
+    let c_html = match CString::new(cleaned) {
         Ok(c) => c,
         Err(_) => return String::new(),
     };
@@ -250,6 +279,11 @@ fn convert_to_markdown(html: &str) -> String {
     unsafe {
         libc::free(ptr as *mut libc::c_void);
     }
+
+    // Collapse 3+ blank lines that html2md sometimes leaves behind.
+    let markdown = regex::Regex::new(r"\n{3,}")
+        .map(|re| re.replace_all(&markdown, "\n\n").to_string())
+        .unwrap_or(markdown);
 
     if let Some(b) = base {
         format!("> Source base: {}\n\n{}", b, markdown.trim())
