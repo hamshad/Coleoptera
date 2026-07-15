@@ -57,30 +57,16 @@ jobs:
         with:
           workspaces: "./src-tauri -> target"
 
-      - name: Import Apple codesign cert (macOS)
-        if: matrix.platform == 'macos' && env.APPLE_CERT_P12 != ''
-        env:
-          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
-          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
-        run: |
-          echo "$APPLE_CERT_P12" | base64 --decode > /tmp/cert.p12
-          security create-keychain -p "" build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "" build.keychain
-          security import /tmp/cert.p12 -k build.keychain -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
-
-      - name: Build Tauri bundles (macOS, signed + notarized)
+      - name: Build Tauri bundles (macOS)
         if: matrix.platform == 'macos'
         env:
-          # Expects secrets: APPLE_CERT_P12, APPLE_CERT_PASSWORD, APPLE_ID,
-          # APPLE_PASSWORD, APPLE_TEAM_ID. If any are empty, signing/notarization
-          # is skipped and an unsigned .dmg is produced instead.
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # The Tauri CLI signs the .app with the "Developer ID Application"
-          # identity from the imported keychain and notarizes with notarytool.
+          # Deliberately NO Apple credentials: we do not sign or notarize, so
+          # the build never touches any Apple Developer account (local or CI).
+          # Tauri falls back to ad-hoc signing (no identity), producing an
+          # unsigned .dmg. On a clean Mac it will still show Gatekeeper's
+          # "unidentified developer" warning — bypass with right-click → Open,
+          # or users can self-sign with their own free Apple ID if desired.
+          APPLE_SIGNING_IDENTITY: ""
           CI: "true"
         run: cargo tauri build
         working-directory: ./src-tauri
