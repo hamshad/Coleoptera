@@ -1,0 +1,124 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+# Allow this job to upload release assets.
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  # Tauri pulls the bundle config from tauri.conf.json, but per-OS signing is
+  # driven by the environment variables below. When a secret is empty the
+  # corresponding signing step is skipped (the bundle still builds, just
+  # unsigned / un-notarized) so the pipeline stays green before certs exist.
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: macos
+          - os: ubuntu-22.04
+            platform: linux
+          - os: windows-latest
+            platform: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf \
+            libssl-dev libjavascriptcoregtk-4.1-dev libxdo-dev
+
+      - name: Install system dependencies (Windows)
+        if: matrix.platform == 'windows'
+        run: |
+          # WiX is required for the .msi target.
+          choco install wixtoolset -y
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Import Apple codesign cert (macOS)
+        if: matrix.platform == 'macos' && env.APPLE_CERT_P12 != ''
+        env:
+          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+        run: |
+          echo "$APPLE_CERT_P12" | base64 --decode > /tmp/cert.p12
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import /tmp/cert.p12 -k build.keychain -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
+
+      - name: Build Tauri bundles (macOS, signed + notarized)
+        if: matrix.platform == 'macos'
+        env:
+          # Expects secrets: APPLE_CERT_P12, APPLE_CERT_PASSWORD, APPLE_ID,
+          # APPLE_PASSWORD, APPLE_TEAM_ID. If any are empty, signing/notarization
+          # is skipped and an unsigned .dmg is produced instead.
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # The Tauri CLI signs the .app with the "Developer ID Application"
+          # identity from the imported keychain and notarizes with notarytool.
+          CI: "true"
+        run: cargo tauri build
+        working-directory: ./src-tauri
+
+      - name: Build Tauri bundles (Windows, signed)
+        if: matrix.platform == 'windows'
+        env:
+          # Expects secrets: WINDOWS_CERT_PFX, WINDOWS_CERT_PASSWORD,
+          # optionally AZURE_KEY_VAULT_* for EV/USB-token signing. Empty => unsigned.
+          AZURE_KEY_VAULT_TENANT_ID: ${{ secrets.AZURE_KEY_VAULT_TENANT_ID }}
+          AZURE_KEY_VAULT_CLIENT_ID: ${{ secrets.AZURE_KEY_VAULT_CLIENT_ID }}
+          AZURE_KEY_VAULT_CLIENT_SECRET: ${{ secrets.AZURE_KEY_VAULT_CLIENT_SECRET }}
+          AZURE_KEY_VAULT_CERT_NAME: ${{ secrets.AZURE_KEY_VAULT_CERT_NAME }}
+          AZURE_KEY_VAULT_NAME: ${{ secrets.AZURE_KEY_VAULT_NAME }}
+          WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: cargo tauri build
+        working-directory: ./src-tauri
+
+      - name: Build Tauri bundles (Linux)
+        if: matrix.platform == 'linux'
+        run: cargo tauri build
+        working-directory: ./src-tauri
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coleoptera-${{ matrix.platform }}
+          path: |
+            src-tauri/target/release/bundle/**/*
+          if-no-files-found: error
+
+      - name: Publish release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            src-tauri/target/release/bundle/**/*
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
