@@ -71,18 +71,14 @@ jobs:
         run: cargo tauri build
         working-directory: ./src-tauri
 
-      - name: Build Tauri bundles (Windows, signed)
+      - name: Build Tauri bundles (Windows)
         if: matrix.platform == 'windows'
         env:
-          # Expects secrets: WINDOWS_CERT_PFX, WINDOWS_CERT_PASSWORD,
-          # optionally AZURE_KEY_VAULT_* for EV/USB-token signing. Empty => unsigned.
-          AZURE_KEY_VAULT_TENANT_ID: ${{ secrets.AZURE_KEY_VAULT_TENANT_ID }}
-          AZURE_KEY_VAULT_CLIENT_ID: ${{ secrets.AZURE_KEY_VAULT_CLIENT_ID }}
-          AZURE_KEY_VAULT_CLIENT_SECRET: ${{ secrets.AZURE_KEY_VAULT_CLIENT_SECRET }}
-          AZURE_KEY_VAULT_CERT_NAME: ${{ secrets.AZURE_KEY_VAULT_CERT_NAME }}
-          AZURE_KEY_VAULT_NAME: ${{ secrets.AZURE_KEY_VAULT_NAME }}
-          WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}
-          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+          # Deliberately NO code-signing credentials: like macOS, the Windows
+          # build produces an unsigned .exe/.msi. SmartScreen will warn on
+          # download, but no certificate authority or account is contacted.
+          # (Self-signing can be added later by the user if they own a cert.)
+          CI: "true"
         run: cargo tauri build
         working-directory: ./src-tauri
 
